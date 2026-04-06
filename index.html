@@ -750,7 +750,7 @@ function initThree() {
   // From the reference image, checker cells look ~30-40px wide at normal zoom
   // Camera sees roughly 60 world units horizontally at camDist=22 → want ~20 cells → cell=3 units
   // → repeat = 500/3 ≈ 167. Let's use 120 (cell=4 units) for clearly visible squares
-  _ct.repeat.set(40, 40);
+  _ct.repeat.set(200, 200);
   // ShaderMaterial bypasses sRGB/tonemapping — outputs exact hex colors
   const _flMat = new THREE.ShaderMaterial({
     uniforms: { uTex: { value: _ct } },
@@ -765,7 +765,7 @@ function initThree() {
       }
     `,
   });
-  const _fl = new THREE.Mesh(new THREE.PlaneGeometry(80,80), _flMat);
+  const _fl = new THREE.Mesh(new THREE.PlaneGeometry(400,400), _flMat);
   _fl.rotation.x = -Math.PI/2;
   // y=0 is tile center, tiles height ~0.2 so bottom at y≈-0.1 — floor exactly there
   _fl.position.set((GRID_W-1)/2*TILE_SIZE, -0.002, (GRID_H-1)/2*TILE_SIZE);
@@ -773,7 +773,7 @@ function initThree() {
 
   // Shadow receiver at same height
   const _shadowMat = new THREE.ShadowMaterial({ opacity: 0.5 });
-  const _shadowPlane = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), _shadowMat);
+  const _shadowPlane = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), _shadowMat);
   _shadowPlane.rotation.x = -Math.PI/2;
   _shadowPlane.position.set((GRID_W-1)/2*TILE_SIZE, -0.001, (GRID_H-1)/2*TILE_SIZE);
   _shadowPlane.receiveShadow = true;
