@@ -6,8 +6,8 @@
 <title>Tower Defense 3D</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #39393b; overflow: hidden; font-family: 'Segoe UI', sans-serif; color: #fff; touch-action: none; }
-#canvas { display: block; width: 100vw; height: 100vh; background: #39393b; }
+body { background: #1a1a2e; overflow: hidden; font-family: 'Segoe UI', sans-serif; color: #fff; touch-action: none; }
+#canvas { display: block; width: 100vw; height: 100vh; }
 
 /* === SCREENS === */
 .screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
@@ -717,67 +717,37 @@ let enemyId = 0;
 function initThree() {
   const canvas = document.getElementById('canvas');
   
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputEncoding = THREE.sRGBEncoding;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.64;
-  renderer.setClearColor(0x000000, 0);
+  renderer.toneMapping = THREE.LinearToneMapping;
+  renderer.toneMappingExposure = 1.0;
   
   scene = new THREE.Scene();
+  
+  // Exact colors from user spec
+  scene.background = new THREE.Color(0x39393b);
 
-  // === CHECKERED FLOOR ===
+  // Checkered floor with exact requested colors
   const _cc = document.createElement('canvas');
   _cc.width = 128; _cc.height = 128;
   const _cx = _cc.getContext('2d');
-  _cx.fillStyle = '#3d3d3f'; _cx.fillRect(0,0,128,128);
-  _cx.fillStyle = '#39393b';
+  _cx.fillStyle = '#3d3d3f'; _cx.fillRect(0,0,128,128);  // light squares
+  _cx.fillStyle = '#39393b';                               // dark squares (same as bg = seamless)
   _cx.fillRect(0,0,64,64); _cx.fillRect(64,64,64,64);
   const _ct = new THREE.CanvasTexture(_cc);
   _ct.wrapS = _ct.wrapT = THREE.RepeatWrapping;
-  // PlaneGeometry 500x500, we want checker cells ~2 world units each
-  // UV is 0→1 across the plane, repeat=N means N cells across
-  // 500 units / N cells = cell_size → N = 500/cell_size
-  // Want cell ≈ 2 units → N = 250... but tiles are 1 unit each so 2-unit cells = 2 tiles per checker
-  // Actually the MAP is 20 tiles = 20 world units, but the PLANE is 500 units
-  // So we want maybe 6-8 visible checker cells per tile-width for a nice look:
-  // 6 cells per tile, 20 tiles = 120 cells across map (20 units) → cell=0.17 units
-  // → repeat across 500 units = 500/0.17 = 2941... too many, will look like solid color
-  // CONCLUSION: the checker should be independent of tile size, just look good on the flat floor
-  // From the reference image, checker cells look ~30-40px wide at normal zoom
-  // Camera sees roughly 60 world units horizontally at camDist=22 → want ~20 cells → cell=3 units
-  // → repeat = 500/3 ≈ 167. Let's use 120 (cell=4 units) for clearly visible squares
-  _ct.repeat.set(200, 200);
-  // ShaderMaterial bypasses sRGB/tonemapping — outputs exact hex colors
-  const _flMat = new THREE.ShaderMaterial({
-    uniforms: { uTex: { value: _ct } },
-    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-    fragmentShader: `
-      uniform sampler2D uTex; varying vec2 vUv;
-      void main(){
-        vec4 c = texture2D(uTex, vUv);
-        // +10% contrast
-        c.rgb = clamp((c.rgb - 0.5) * 1.1 + 0.5, 0.0, 1.0);
-        gl_FragColor = c;
-      }
-    `,
-  });
-  const _fl = new THREE.Mesh(new THREE.PlaneGeometry(400,400), _flMat);
+  _ct.repeat.set(80,80);
+  const _fl = new THREE.Mesh(
+    new THREE.PlaneGeometry(500,500),
+    new THREE.MeshBasicMaterial({map:_ct})
+  );
   _fl.rotation.x = -Math.PI/2;
-  // y=0 is tile center, tiles height ~0.2 so bottom at y≈-0.1 — floor exactly there
-  _fl.position.set((GRID_W-1)/2*TILE_SIZE, -0.002, (GRID_H-1)/2*TILE_SIZE);
+  _fl.position.set((GRID_W-1)/2*TILE_SIZE, -0.31, (GRID_H-1)/2*TILE_SIZE);
   scene.add(_fl);
-
-  // Shadow receiver at same height
-  const _shadowMat = new THREE.ShadowMaterial({ opacity: 0.5 });
-  const _shadowPlane = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), _shadowMat);
-  _shadowPlane.rotation.x = -Math.PI/2;
-  _shadowPlane.position.set((GRID_W-1)/2*TILE_SIZE, -0.001, (GRID_H-1)/2*TILE_SIZE);
-  _shadowPlane.receiveShadow = true;
-  scene.add(_shadowPlane);
 
   // Camera
   camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
@@ -785,31 +755,37 @@ function initThree() {
   
   raycaster = new THREE.Raycaster();
   
-  // Lighting — dark Kenney style: не пересвечивать
-  const ambLight = new THREE.AmbientLight(0xfff0e0, 0.47);
+  // === KENNEY-STYLE LIGHTING ===
+  // Soft warm ambient — fills everything gently, no harsh dark areas
+  const ambLight = new THREE.AmbientLight(0xfff0e0, 0.7);
   scene.add(ambLight);
 
-  const dirLight = new THREE.DirectionalLight(0xffeedd, 1.1);
-  dirLight.position.set(-6, 20, 10);
+  // Primary sun — warm, moderate intensity from upper-left
+  // Not too bright so colors stay true to the texture palette
+  const dirLight = new THREE.DirectionalLight(0xffeedd, 1.4);
+  dirLight.position.set(-6, 16, 10);
   dirLight.castShadow = true;
-  dirLight.shadow.mapSize.width = 4096;
-  dirLight.shadow.mapSize.height = 4096;
+  dirLight.shadow.mapSize.width = 2048;
+  dirLight.shadow.mapSize.height = 2048;
   dirLight.shadow.camera.near = 0.1;
-  dirLight.shadow.camera.far = 100;
-  // Cover full 20x20 grid (each tile = 1 unit, so 20 units total)
-  dirLight.shadow.camera.left = -30;
-  dirLight.shadow.camera.right = 30;
-  dirLight.shadow.camera.top = 30;
-  dirLight.shadow.camera.bottom = -30;
-  dirLight.shadow.bias = -0.0005;
-  dirLight.shadow.normalBias = 0.02;
+  dirLight.shadow.camera.far = 80;
+  dirLight.shadow.camera.left = -22;
+  dirLight.shadow.camera.right = 22;
+  dirLight.shadow.camera.top = 22;
+  dirLight.shadow.camera.bottom = -22;
+  dirLight.shadow.bias = -0.001;
+  dirLight.shadow.normalBias = 0.05;
   scene.add(dirLight);
 
-  const fillLight = new THREE.DirectionalLight(0x8899cc, 0.35);
+  // Cool blue-purple fill from right — gives the characteristic Kenney
+  // colour contrast between lit face and shadow face
+  const fillLight = new THREE.DirectionalLight(0x7799dd, 0.5);
   fillLight.position.set(10, 4, -8);
   scene.add(fillLight);
 
-  const hemiLight = new THREE.HemisphereLight(0xddeeff, 0x887755, 0.3);
+  // Hemisphere light — sky above warm, ground below cool
+  // This is what gives Kenney its pleasant even look
+  const hemiLight = new THREE.HemisphereLight(0xeef4ff, 0x998866, 0.35);
   scene.add(hemiLight);
   
   window.addEventListener('resize', onResize);
